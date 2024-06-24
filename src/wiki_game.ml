@@ -14,9 +14,24 @@ open! Core
    One nice think about Wikipedia is that stringent content moderation results in
    uniformity in article format. We can expect that all Wikipedia article links parsed
    from a Wikipedia page will have the form "/wiki/<TITLE>". *)
+
+
+let not_in_name_space s = 
+  let option = Wikipedia_namespace.namespace s in
+    match option with 
+    | None -> true
+    | Some _namespace -> false
+;;
+
+
 let get_linked_articles contents : string list =
-  ignore (contents : string);
-  failwith "TODO"
+  let open Soup in 
+  parse contents 
+  $$ "a[href*=/wiki/]" 
+  |> to_list
+  |> List.map ~f:(fun a -> R.attribute "href" a)
+  |> List.filter ~f:(not_in_name_space)
+  |> List.dedup_and_sort ~compare:(String.compare)
 ;;
 
 let print_links_command =
