@@ -1,6 +1,11 @@
 open! Core
+
+
 module City = String
-module Highway = String
+module Highway = struct 
+  include String
+  let default = ""
+end
 
 module Network = struct
   (* We can represent our interstate graph as a set of connections, where a
@@ -18,7 +23,7 @@ module Network = struct
       | hd :: tl -> Some (Highway.of_string hd, List.map ~f:City.of_string tl)
       | _ -> None
     ;;
-  end
+  end (* used to generate the City List *)
 
   module Connection = struct
     module T = struct
@@ -27,14 +32,22 @@ module Network = struct
 
     include Comparable.Make (T)
 
-    let of_string s =
-      match String.split s ~on:',' with
-      | [ a; b ] -> Some (City.of_string a, City.of_string b)
-      | _ -> None
+    let rec generate_pairs (highway:Highway.t) (cities:City.t list) = 
+      match cities with 
+      | h :: t -> let list = List.map t ~f:(fun city -> (highway, (h, city))) in
+                  List.append list (generate_pairs highway (List.tl_exn cities))
+      | _ -> []
     ;;
-  end
 
-  type t = City_List.Set.t [@@deriving sexp_of]
+    let of_string city_lists =
+      List.concat_map city_lists ~f:(fun (highway, cities) -> generate_pairs highway cities)
+    ;;
+
+  end (* used to generate the pairs needs go be given a String s that has the following format: Highway, City, City *)
+
+
+  type t = Connection.Set.t [@@deriving sexp_of]
+    (* each Network.t has a SET of City Lists (One city list per highway) and a SET of city pairs *)
 
   let of_file input_file =
     let cities =
@@ -51,7 +64,8 @@ module Network = struct
             s;
           [])
     in
-    City_List.Set.of_list cities
+    Connection.Set.of_list (Connection.of_string cities)
+    (*City_List.Set.of_list cities*)
   ;;
 
 end
@@ -78,6 +92,26 @@ let load_command =
 let get_pairs network:Network.t = 
     
 ;; *)
+module G = Graph.Imperative.Graph.ConcreteLabeled (City) (Highway)
+
+(* We extend our [Graph] structure with the [Dot] API so that we can easily
+   render constructed graphs. Documentation about this API can be found here:
+   https://github.com/backtracking/ocamlgraph/blob/master/src/dot.mli *)
+module Dot = Graph.Graphviz.Dot (struct
+    include G
+
+    (* These functions can be changed to tweak the appearance of the
+       generated graph. Check out the ocamlgraph graphviz API
+       (https://github.com/backtracking/ocamlgraph/blob/master/src/graphviz.mli)
+       for examples of what values can be set here. *)
+    let edge_attributes (_v,e,_v2) = [ `Dir `None ;`Label e ]
+    let default_edge_attributes _ = []
+    let get_subgraph _ = None
+    let vertex_attributes v = [ `Shape `Box; `Label v; `Fillcolor 1000 ]
+    let vertex_name v = v
+    let default_vertex_attributes _ = []
+    let graph_attributes _ = []
+  end)
 
 let visualize_command =
   let open Command.Let_syntax in
@@ -100,8 +134,15 @@ let visualize_command =
           ~doc:"FILE where to write generated graph"
       in
       fun () ->
-        ignore (input_file : File_path.t);
-        ignore (output_file : File_path.t);
+        let network = Network.of_file input_file in
+        let graph = G.create () in
+        Set.iter network ~f:(fun (highway, (city1, city2)) ->
+          (* [G.add_edge] auomatically adds the endpoints as vertices in the
+             graph if they don't already exist. *)
+          G.add_edge_e graph (city1,highway,city2));
+        Dot.output_graph
+          (Out_channel.create (File_path.to_string output_file))
+          graph;
         printf !"Done! Wrote dot file to %{File_path}\n%!" output_file]
 ;;
 
