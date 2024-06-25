@@ -124,10 +124,30 @@ let visualize_command =
 
 (* [find_friend_group network ~person] returns a list of all people who are
    mutually connected to the provided [person] in the provided [network]. *)
+
+let rec traverse network to_visit visited =
+  let network_new = Set.elements network in
+  match Queue.dequeue to_visit with
+  | None -> Hash_set.to_list visited
+  | Some person ->
+    let pairs =
+      List.filter network_new ~f:(fun (person1, person2) ->
+        String.equal person1 person || String.equal person2 person)
+    in Hash_set.add visited person ;
+    List.iter pairs ~f:(fun (person1, person2) ->
+      if not (Hash_set.exists visited ~f:(String.equal person2))
+      then Queue.enqueue to_visit person2
+      else if not (Hash_set.exists visited ~f:(String.equal person1))
+      then Queue.enqueue to_visit person1
+      else ());
+    traverse network to_visit visited
+;;
+
 let find_friend_group network ~person : Person.t list =
-  ignore (network : Network.t);
-  ignore (person : Person.t);
-  failwith "TODO"
+  let visited = Hash_set.create (module String) in
+  let to_visit = Queue.create () in
+  Queue.enqueue to_visit person;
+  traverse network to_visit visited
 ;;
 
 let find_friend_group_command =

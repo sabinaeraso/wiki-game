@@ -50,14 +50,37 @@ let print_links_command =
    [how_to_fetch] argument along with [File_fetcher] to fetch the articles so that the
    implementation can be tested locally on the small dataset in the ../resources/wiki
    directory. *)
-let visualize ?(max_depth = 3) ~origin ~output_file ~how_to_fetch () : unit =
-  ignore (max_depth : int);
-  ignore (origin : string);
-  ignore (output_file : File_path.t);
-  ignore (how_to_fetch : File_fetcher.How_to_fetch.t);
-  failwith "TODO"
-;;
 
+
+  module Url = String
+  module Title = String 
+
+  
+
+  module Article  = struct
+    module T = struct
+      type t = Title.t * Url.t [@@deriving compare, sexp]
+   end
+  end
+
+
+(*
+  
+let dfs to_visit origin visited = 
+  let linked_articles = get_linked_articles origin in 
+  match Stack.pop to_visit with 
+  | None -> Hash_set.to_list visited
+  | Some article -> if visited
+
+;; 
+
+let visualize ?(max_depth = 3) ~origin ~output_file ~how_to_fetch () : unit =
+  let visited = Hash_set.create (module String) in
+  let to_visit = Stack.create () in
+  Stack.enqueue to_visit origin;
+  dfs to_visit origin visited 
+;;
+*)
 let visualize_command =
   let open Command.Let_syntax in
   Command.basic
@@ -79,7 +102,7 @@ let visualize_command =
           ~doc:"FILE where to write generated graph"
       in
       fun () ->
-        visualize ~max_depth ~origin ~output_file ~how_to_fetch ();
+        (*visualize ~max_depth ~origin ~output_file ~how_to_fetch ();*)
         printf !"Done! Wrote dot file to %{File_path}\n%!" output_file]
 ;;
 
