@@ -63,24 +63,72 @@ let print_links_command =
    end
   end
 
+  module G = Graph.Imperative.Graph.Concrete (Title)
 
-(*
+  (* We extend our [Graph] structure with the [Dot] API so that we can easily
+     render constructed graphs. Documentation about this API can be found here:
+     https://github.com/backtracking/ocamlgraph/blob/master/src/dot.mli *)
+  module Dot = Graph.Graphviz.Dot (struct
+      include G
   
-let dfs to_visit origin visited = 
-  let linked_articles = get_linked_articles origin in 
-  match Stack.pop to_visit with 
-  | None -> Hash_set.to_list visited
-  | Some article -> if visited
+      (* These functions can be changed to tweak the appearance of the
+         generated graph. Check out the ocamlgraph graphviz API
+         (https://github.com/backtracking/ocamlgraph/blob/master/src/graphviz.mli)
+         for examples of what values can be set here. *)
+      let edge_attributes _ = [ `Dir `None ]
+      let default_edge_attributes _ = []
+      let get_subgraph _ = None
+      let vertex_attributes v = [ `Shape `Box; `Label v; `Fillcolor 1000 ]
+      let vertex_name v = sprintf !"\"%s\"" v
+      let default_vertex_attributes _ = []
+      let graph_attributes _ = []
+    end)
+  (* pairs of articles where the first has the second as a link *)
 
+
+let get_title link how_to_fetch = 
+  let article = File_fetcher.fetch_exn how_to_fetch ~resource:link in
+  let open Soup in 
+  parse article 
+  $$ "title" 
+  |> to_list 
+  |> fun x-> List.nth_exn x 0
+  |> texts 
+  |> String.concat
+  |> String.split_on_chars ~on: [' ';'-';'(';')']
+  |> String.concat
+  |> String.chop_suffix_if_exists ~suffix:"Wikipedia"
+  |> fun s-> String.append s " - Wikipedia"
+;;
+
+let rec dfs how_to_fetch to_visit max_depth= 
+  match Queue.dequeue to_visit with 
+  | None -> []
+  | Some (article,depth1) -> let current_article = (get_title article how_to_fetch,article) in 
+                         let linked = get_linked_articles (File_fetcher.fetch_exn how_to_fetch ~resource:article) in
+                         List.iter linked ~f:(fun art -> Queue.enqueue to_visit (art,depth1 + 1));
+                         let linked_articles = List.map linked ~f:(fun s -> (get_title s how_to_fetch,s)) in
+                         let pairs = List.map linked_articles ~f: (fun a -> (current_article,a)) in
+                         if depth1 > max_depth (* regardless of what i change this to its still only giving me these articles in my map *)
+                          then pairs
+                          else ( 
+                         List.append pairs (dfs how_to_fetch to_visit max_depth))
 ;; 
 
 let visualize ?(max_depth = 3) ~origin ~output_file ~how_to_fetch () : unit =
-  let visited = Hash_set.create (module String) in
-  let to_visit = Stack.create () in
-  Stack.enqueue to_visit origin;
-  dfs to_visit origin visited 
+  let to_visit = Queue.create () in
+  Queue.enqueue to_visit (origin,0);
+  let pairs = dfs how_to_fetch to_visit max_depth in
+  let graph = G.create () in
+        List.iter pairs ~f:(fun ((title1, _url1), (title2, _url2)) ->
+          (* [G.add_edge] auomatically adds the endpoints as vertices in the
+             graph if they don't already exist. *)
+          G.add_edge graph title1 title2);
+        Dot.output_graph
+          (Out_channel.create (File_path.to_string output_file))
+          graph;
 ;;
-*)
+
 let visualize_command =
   let open Command.Let_syntax in
   Command.basic
@@ -102,7 +150,7 @@ let visualize_command =
           ~doc:"FILE where to write generated graph"
       in
       fun () ->
-        (*visualize ~max_depth ~origin ~output_file ~how_to_fetch ();*)
+        visualize ~max_depth ~origin ~output_file ~how_to_fetch ();
         printf !"Done! Wrote dot file to %{File_path}\n%!" output_file]
 ;;
 
