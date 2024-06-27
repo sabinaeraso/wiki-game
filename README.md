@@ -510,6 +510,7 @@ also make sure to test your command in the commandline using the
 [maze_medium.txt](./resources/maze_medium.txt), and
 [maze_large.txt](./resources/maze_large.txt) files. 
 
+ dune exec ./bin/wiki_game.exe -- maze solve -
 ### Exercise 4: wiki racer
 
 Once again back to the Wikipedia game player. Let's now use use our experience creating

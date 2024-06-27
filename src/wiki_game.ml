@@ -59,8 +59,11 @@ let print_links_command =
 
   module Article  = struct
     module T = struct
-      type t = Title.t * Url.t [@@deriving compare, sexp]
+      type t = Title.t * Url.t [@@deriving compare, sexp, hash]
    end
+
+  include T
+  include Comparable.Make (T)
   end
 
   module G = Graph.Imperative.Graph.Concrete (Title)
@@ -100,6 +103,12 @@ let get_title link how_to_fetch =
   |> String.chop_suffix_if_exists ~suffix:"Wikipedia"
   |> fun s-> String.append s " - Wikipedia"
 ;;
+let correct_url url (how_to_fetch :File_fetcher.How_to_fetch.t) =
+  match how_to_fetch with 
+  | Local _ -> url 
+  | Remote -> if not (String.is_prefix ~prefix: "https://" url) then "https://en.wikipedia.org" ^ url else url 
+;;
+
 
 let rec dfs how_to_fetch to_visit max_depth= 
   match Queue.dequeue to_visit with 
@@ -107,7 +116,7 @@ let rec dfs how_to_fetch to_visit max_depth=
   | Some (article,depth1) -> let current_article = (get_title article how_to_fetch,article) in 
                          let linked = get_linked_articles (File_fetcher.fetch_exn how_to_fetch ~resource:article) in
                          List.iter linked ~f:(fun art -> Queue.enqueue to_visit (art,depth1 + 1));
-                         let linked_articles = List.map linked ~f:(fun s -> (get_title s how_to_fetch,s)) in
+                         let linked_articles = List.map linked ~f:(fun s -> (get_title s how_to_fetch, correct_url s how_to_fetch)) in
                          let pairs = List.map linked_articles ~f: (fun a -> (current_article,a)) in
                          if depth1 > max_depth (* regardless of what i change this to its still only giving me these articles in my map *)
                           then pairs
@@ -162,12 +171,34 @@ let visualize_command =
    the ../resources/wiki directory.
 
    [max_depth] is useful to limit the time the program spends exploring the graph. *)
-let find_path ?(max_depth = 3) ~origin ~destination ~how_to_fetch () =
-  ignore (max_depth : int);
-  ignore (origin : string);
-  ignore (destination : string);
-  ignore (how_to_fetch : File_fetcher.How_to_fetch.t);
-  failwith "TODO"
+
+
+  let rec bfs how_to_fetch network destination visited to_visit = 
+    (*Queue.iter to_visit ~f:(fun article -> print_s[%message (article:(string*string))]) ;*)
+    match Queue.dequeue to_visit with 
+      | None -> None
+      | Some ((title,url),path) -> 
+        Hash_set.add visited (title,url) ;
+        if (String.equal (correct_url url how_to_fetch) destination) 
+          then (Some path) 
+      else (
+        let linked = List.filter network ~f:(fun ((_title1,url1),(title2,url2)) -> (String.equal url1 url) && not(Hash_set.mem visited (title2,url2)) ) in
+                        List.iter linked ~f:(fun ((_),(title2,url2)) -> Queue.enqueue to_visit ((title2,url2), path @ [title2]) ; Hash_set.add visited (title2,url2) ; ) ; 
+                             match (bfs how_to_fetch network destination visited to_visit) with 
+                            | None -> None
+                            | Some list -> Some list )
+  ;;
+
+  let find_path ?(max_depth = 3) ~origin ~destination ~how_to_fetch () =
+    let to_visit_graph = Queue.create () in
+    Queue.enqueue to_visit_graph (origin,0);
+    let network = dfs how_to_fetch to_visit_graph max_depth in
+    let origin_article = (get_title origin how_to_fetch, (correct_url origin how_to_fetch)) in 
+    let origin_title,_ = origin_article in
+    let to_visit = Queue.create() in 
+    let visited = Hash_set.create (module Article) in 
+    Queue.enqueue to_visit (origin_article,[origin_title]) ;
+    bfs how_to_fetch network (correct_url destination how_to_fetch) visited to_visit 
 ;;
 
 let find_path_command =
