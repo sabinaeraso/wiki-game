@@ -79,8 +79,7 @@ let solve_command =
               | '.' -> (x, y), "Open"
               | 'S' -> (x, y), "Start"
               | 'E' -> (x, y), "End"
-              | _ -> (0, 0), "None"
-              (* should never happen*)))
+              | _ -> failwith "Bad input"))
         in
         print_s [%message (maze : ((int * int) * string) list)];
         let visited = Hash_set.create (module Point) in

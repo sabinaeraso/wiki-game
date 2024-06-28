@@ -88,9 +88,14 @@ let print_links_command =
     end)
   (* pairs of articles where the first has the second as a link *)
 
+  let correct_url url (how_to_fetch :File_fetcher.How_to_fetch.t) =
+    match how_to_fetch with 
+    | Local _ -> url 
+    | Remote -> if not (String.is_prefix ~prefix: "https://" url) then "https://en.wikipedia.org" ^ url else url 
+  ;;
 
 let get_title link how_to_fetch = 
-  let article = File_fetcher.fetch_exn how_to_fetch ~resource:link in
+  let article = File_fetcher.fetch_exn how_to_fetch ~resource:(correct_url link how_to_fetch) in
   let open Soup in 
   parse article 
   $$ "title" 
@@ -103,18 +108,14 @@ let get_title link how_to_fetch =
   |> String.chop_suffix_if_exists ~suffix:"Wikipedia"
   |> fun s-> String.append s " - Wikipedia"
 ;;
-let correct_url url (how_to_fetch :File_fetcher.How_to_fetch.t) =
-  match how_to_fetch with 
-  | Local _ -> url 
-  | Remote -> if not (String.is_prefix ~prefix: "https://" url) then "https://en.wikipedia.org" ^ url else url 
-;;
+
 
 
 let rec dfs how_to_fetch to_visit max_depth= 
   match Queue.dequeue to_visit with 
   | None -> []
-  | Some (article,depth1) -> let current_article = (get_title article how_to_fetch,article) in 
-                         let linked = get_linked_articles (File_fetcher.fetch_exn how_to_fetch ~resource:article) in
+  | Some (article,depth1) -> let current_article = (get_title article how_to_fetch,correct_url article how_to_fetch ) in 
+                         let linked = get_linked_articles (File_fetcher.fetch_exn how_to_fetch ~resource:(correct_url article how_to_fetch)) in
                          List.iter linked ~f:(fun art -> Queue.enqueue to_visit (art,depth1 + 1));
                          let linked_articles = List.map linked ~f:(fun s -> (get_title s how_to_fetch, correct_url s how_to_fetch)) in
                          let pairs = List.map linked_articles ~f: (fun a -> (current_article,a)) in
@@ -174,19 +175,15 @@ let visualize_command =
 
 
   let rec bfs how_to_fetch network destination visited to_visit = 
-    (*Queue.iter to_visit ~f:(fun article -> print_s[%message (article:(string*string))]) ;*)
     match Queue.dequeue to_visit with 
       | None -> None
-      | Some ((title,url),path) -> 
-        Hash_set.add visited (title,url) ;
+      | Some ((_title,url),path) -> 
         if (String.equal (correct_url url how_to_fetch) destination) 
           then (Some path) 
       else (
         let linked = List.filter network ~f:(fun ((_title1,url1),(title2,url2)) -> (String.equal url1 url) && not(Hash_set.mem visited (title2,url2)) ) in
                         List.iter linked ~f:(fun ((_),(title2,url2)) -> Queue.enqueue to_visit ((title2,url2), path @ [title2]) ; Hash_set.add visited (title2,url2) ; ) ; 
-                             match (bfs how_to_fetch network destination visited to_visit) with 
-                            | None -> None
-                            | Some list -> Some list )
+                             bfs how_to_fetch network destination visited to_visit )
   ;;
 
   let find_path ?(max_depth = 3) ~origin ~destination ~how_to_fetch () =
@@ -197,6 +194,7 @@ let visualize_command =
     let origin_title,_ = origin_article in
     let to_visit = Queue.create() in 
     let visited = Hash_set.create (module Article) in 
+    Hash_set.add visited origin_article ;
     Queue.enqueue to_visit (origin_article,[origin_title]) ;
     bfs how_to_fetch network (correct_url destination how_to_fetch) visited to_visit 
 ;;
